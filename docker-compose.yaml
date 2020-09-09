@@ -1,0 +1,573 @@
+version: "2.4"
+
+volumes:
+   steve_mariadb_config:
+      name: steve_mariadb_config
+   steve_mariadb_data:
+      name: steve_mariadb_data
+   steve_kodi-headless_config:
+      name: steve_kodi-headless_config
+   steve_airsonic_config:
+      name: steve_airsonic_config
+   steve_subsonic_config:
+      name: steve_subsonic_config
+   steve_jellyfin_config:
+      name: steve_jellyfin_config
+   steve_jellyfin_cache:
+      name: steve_jellyfin_cache
+   steve_jellyfin_transcodes:
+      name: steve_jellyfin_transcodes
+   steve_jellyfin_metadata:
+      name: steve_jellyfin_metadata
+   steve_openvpnpia_data:
+      name: steve_openvpnpia_data
+   steve_sabnzbd_config:
+      name: steve_sabnzbd_config
+   steve_deluge_config:
+      name: steve_deluge_config
+   steve_couchpotato_config:
+      name: steve_couchpotato_config
+   steve_sickgear_config:
+      name: steve_sickgear_config
+   steve_headphones_config:
+      name: steve_headphones_config
+   steve_musicbrainz_config:
+      name: steve_musicbrainz_config
+   steve_nextcloud_website:
+      name: steve_nextcloud_website
+   steve_nginx_config:
+      name: steve_nginx_config
+   steve_nginx_cache:
+      name: steve_nginx_cache
+   steve_redis_data:
+      name: steve_redis_data
+
+networks:
+   containers:
+      name: containers
+      driver: bridge
+      ipam:
+         driver: default
+         config:
+            - subnet: 192.168.2.0/24
+      driver_opts:
+         com.docker.network.bridge.name: containers0
+
+services:
+   mariadb:
+      hostname: mariadb
+      networks:
+         containers:
+            aliases:
+               - mariadb
+      environment:
+         - TZ=$time_zone
+         - MYSQL_ROOT_PASSWORD=$stack_password
+         - kodi_password=$kodi_password
+         - kodi_music_db=$kodi_music_db
+         - kodi_videos_db=$kodi_videos_db
+         - nextcloud_enabled=$nextcloud_enabled
+         - nextcloud_db=$nextcloud_db
+         - nextcloud_db_user=$nextcloud_db_user
+         - nextcloud_db_password=$nextcloud_db_password
+      image: boredazfcuk/mariadb
+      ports:
+         - "3306:3306"
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - steve_mariadb_config:/etc/mysql/conf.d
+         - steve_mariadb_data:/var/lib/mysql
+   kodi:
+      hostname: kodi
+      networks:
+         containers:
+            aliases:
+               - kodi
+      environment:
+         - kodi_debug_logging=$kodi_debug_logging
+         - MYSQL_ROOT_PASSWORD=$stack_password
+         - TZ=$time_zone
+         - PUID=$user_id
+         - PGID=$kodi_headless_group_id
+         - kodi_enabled=$kodi_enabled
+         - kodi_password=$kodi_password
+         - kodi_music_db=$kodi_music_db
+         - kodi_videos_db=$kodi_videos_db
+         - certification_prefix=$certification_prefix
+         - certification_country=$certification_country
+         - video_dirs=$video_dirs
+         - tv_dirs=$tv_dirs
+         - music_dirs=$music_dirs
+         - scraper=$scraper
+      image: boredazfcuk/kodi-headless
+      ports:
+         - 8080:8080
+         - 9090:9090
+         - 9777:9777/udp
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - mariadb
+      volumes:
+         - steve_kodi-headless_config:/config/.kodi
+         - /storage/:/storage/
+   letsencrypt:
+      hostname: letsencrypt
+      networks:
+         containers:
+            aliases:
+               - letsencrypt
+      environment:
+         - TZ=$time_zone
+         - lets_encrypt_domains=$lets_encrypt_domains
+         - lets_encrypt_renewal_options=$lets_encrypt_renewal_options
+      image: boredazfcuk/letsencrypt
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - /etc/letsencrypt/:/etc/letsencrypt/
+   geoipdb:
+      hostname: geoipdb
+      networks:
+         containers:
+            aliases:
+               - geoipdb
+      environment:
+         - TZ=$time_zone
+         - maxmind_licence_key=$maxmind_licence_key
+      image: boredazfcuk/geoipdb
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - /usr/share/GeoIP/:/usr/share/GeoIP/
+   openvpnpia:
+      hostname: openvpnpia
+      networks:
+         containers:
+            aliases:
+               - openvpnpia
+               - sabnzbd
+               - deluge
+               - couchpotato
+               - sickgear
+               - headphones
+               - airsonic
+               - subsonic
+               - jellyfin
+      environment:
+         - TZ=$time_zone
+         - pia_config_file=$pia_config_file
+         - host_lan_ip_subnet=$host_lan_ip_subnet
+         - sabnzbd_group_id=$sabnzbd_group_id
+         - deluge_group_id=$deluge_group_id
+         - couchpotato_group_id=$couchpotato_group_id
+         - sickgear_group_id=$sickgear_group_id
+         - headphones_group_id=$headphones_group_id
+         - airsonic_group_id=$airsonic_group_id
+         - subsonic_group_id=$subsonic_group_id
+         - jellyfin_group_id=$jellyfin_group_id
+      image: boredazfcuk/openvpnpia
+      dns:
+         - 209.222.18.222
+         - 209.222.18.218
+      cap_add:
+         - NET_ADMIN
+      devices:
+         - /dev/net/tun
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+         timeout: 30s
+      restart: always
+      volumes:
+         - steve_openvpnpia_data:/config
+   sabnzbd:
+      network_mode: service:openvpnpia
+      image: boredazfcuk/sabnzbd
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - openvpnpia_enabled=$openvpnpia_enabled
+         - sabnzbd_enabled=$sabnzbd_enabled
+         - sabnzbd_group=$sabnzbd_group
+         - sabnzbd_group_id=$sabnzbd_group_id
+         - couchpotato_enabled=$couchpotato_enabled
+         - sickgear_enabled=$sickgear_enabled
+         - headphones_enabled=$headphones_enabled
+         - media_access_domain=$media_access_domain
+         - global_api_key=$global_api_key
+         - movie_complete_dir=$movie_complete_dir
+         - music_complete_dir=$music_complete_dir
+         - other_complete_dir=$other_complete_dir
+         - tv_complete_dir=$tv_complete_dir
+         - sabnzbd_watch_dir=$sabnzbd_watch_dir
+         - sabnzbd_file_backup_dir=$sabnzbd_file_backup_dir
+         - sabnzbd_incoming_dir=$sabnzbd_incoming_dir
+         - sabnzbd_server_host=$sabnzbd_server_host
+         - sabnzbd_server_host_port=$sabnzbd_server_host_port
+         - sabnzbd_server_host_ssl=$sabnzbd_server_host_ssl
+         - sabnzbd_server_host_user=$sabnzbd_server_host_user
+         - sabnzbd_server_host_password=$sabnzbd_server_host_password
+         - sabnzbd_server_host_connections=$sabnzbd_server_host_connections
+         - sabnzbd_server_host_priority=$sabnzbd_server_host_priority
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - openvpnpia
+      volumes:
+         - steve_sabnzbd_config:/config/
+         - /storage/:/storage/
+   deluge:
+      network_mode: service:openvpnpia
+      image: boredazfcuk/deluge
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - deluge_enabled=$deluge_enabled
+         - deluge_group=$deluge_group
+         - deluge_group_id=$deluge_group_id
+         - global_api_key=$global_api_key
+         - openvpnpia_enabled=$openvpnpia_enabled
+         - couchpotato_enabled=$couchpotato_enabled
+         - sickgear_enabled=$sickgear_enabled
+         - headphones_enabled=$headphones_enabled
+         - download_complete_dir=$download_complete_dir
+         - movie_complete_dir=$movie_complete_dir
+         - music_complete_dir=$music_complete_dir
+         - other_complete_dir=$other_complete_dir
+         - tv_complete_dir=$tv_complete_dir
+         - deluge_watch_dir=$deluge_watch_dir
+         - deluge_incoming_dir=$deluge_incoming_dir
+         - deluge_file_backup_dir=$deluge_file_backup_dir
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - openvpnpia
+      volumes:
+         - steve_deluge_config:/config/
+         - /usr/share/GeoIP/:/usr/share/GeoIP/
+         - /storage/:/storage/
+   couchpotato:
+      network_mode: service:openvpnpia
+      image: boredazfcuk/couchpotatoserver
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - couchpotato_enabled=$couchpotato_enabled
+         - couchpotato_group=$couchpotato_group
+         - couchpotato_group_id=$couchpotato_group_id
+         - couchpotato_notifications=$couchpotato_notifications
+         - openvpnpia_enabled=$openvpnpia_enabled
+         - sabnzbd_enabled=$sabnzbd_enabled
+         - deluge_enabled=$deluge_enabled
+         - deluge_incoming_dir=$deluge_incoming_dir
+         - kodi_headless_group_id=$kodi_headless_group_id
+         - kodi_password=$kodi_password
+         - jellyfin_enabled=$jellyfin_enabled
+         - global_api_key=$global_api_key
+         - video_dirs=$video_dirs
+         - movie_complete_dir=$movie_complete_dir
+         - prowl_api_key=$prowl_api_key
+         - telegram_token=$telegram_token
+         - telegram_chat_id=$telegram_chat_id
+         - omgwtfnzbs_user=$omgwtfnzbs_user
+         - omgwtfnzbs_api_key=$omgwtfnzbs_api_key
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - openvpnpia
+      volumes:
+         - steve_couchpotato_config:/config/
+         - /storage/:/storage/
+   sickgear:
+      network_mode: service:openvpnpia
+      image: boredazfcuk/sickgear
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - sickgear_enabled=$sickgear_enabled
+         - sickgear_group=$sickgear_group
+         - sickgear_group_id=$sickgear_group_id
+         - sickgear_notifications=$sickgear_notifications
+         - openvpnpia_enabled=$openvpnpia_enabled
+         - sabnzbd_enabled=$sabnzbd_enabled
+         - deluge_enabled=$deluge_enabled
+         - kodi_headless_group_id=$kodi_headless_group_id
+         - kodi_password=$kodi_password
+         - jellyfin_enabled=$jellyfin_enabled
+         - global_api_key=$global_api_key
+         - media_access_domain=$media_access_domain
+         - tv_dirs=$tv_dirs
+         - deluge_watch_dir=$deluge_watch_dir
+         - telegram_token=$telegram_token
+         - telegram_chat_id=$telegram_chat_id
+         - omgwtfnzbs_user=$omgwtfnzbs_user
+         - omgwtfnzbs_api_key=$omgwtfnzbs_api_key
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - openvpnpia
+      volumes:
+         - steve_sickgear_config:/config/
+         - /storage/:/storage/
+   headphones:
+      network_mode: service:openvpnpia
+      image: boredazfcuk/headphones
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - headphones_group=$headphones_group
+         - headphones_group_id=$headphones_group_id
+         - global_api_key=$global_api_key
+         - openvpnpia_enabled=$openvpnpia_enabled
+         - sabnzbd_enabled=$sabnzbd_enabled
+         - deluge_enabled=$deluge_enabled
+         - airsonic_enabled=$airsonic_enabled
+         - kodi_headless_group_id=$kodi_headless_group_id
+         - kodi_password=$kodi_password
+         - musicbrainz_enabled=$musicbrainz_enabled
+         - music_dirs=$music_dirs
+         - music_complete_dir=$music_complete_dir
+         - deluge_watch_dir=$deluge_watch_dir
+         - deluge_incoming_dir=$deluge_incoming_dir
+         - deluge_file_backup_dir=$deluge_file_backup_dir
+         - sabnzbd_watch_dir=$sabnzbd_watch_dir
+         - prowl_api_key=$prowl_api_key
+         - omgwtfnzbs_user=$omgwtfnzbs_user
+         - omgwtfnzbs_api_key=$omgwtfnzbs_api_key
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - openvpnpia
+         - musicbrainz
+      volumes:
+         - steve_headphones_config:/config/
+   musicbrainz:
+      hostname: musicbrainz
+      networks:
+         containers:
+            aliases:
+               - musicbrainz
+      environment:
+         - TZ=$time_zone
+         - BRAINZCODE=$musicbrainz_code
+         - URLROOT=$musicbrainz_url_root
+         - WEBADDRESS=$media_access_domain
+      image: linuxserver/musicbrainz
+      ports:
+         - "5000:5000"
+      healthcheck:
+         test: wget --quiet --tries=1 --spider "http://$$HOSTNAME:5000" && psql -U abc --command "\c musicbrainz_db" || exit 1
+         start_period: 30s
+      restart: always
+      volumes:
+         - steve_musicbrainz_config:/config
+         - /mnt/hd3-HGTS-1TB/MusicBrainz_DB/:/data
+   airsonic:
+      network_mode: service:openvpnpia
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - airsonic_group=$airsonic_group
+         - airsonic_group_id=$airsonic_group_id
+         - airsonic_context_path=$airsonic_context_path
+         - openvpnpia_enabled=$openvpnpia_enabled
+      image: boredazfcuk/airsonic
+      depends_on:
+         - openvpnpia
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - steve_airsonic_config:/config/
+         - /storage/:/storage/
+   subsonic:
+      network_mode: service:openvpnpia
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - subsonic_group=$subsonic_group
+         - subsonic_group_id=$subsonic_group_id
+         - subsonic_context_path=$subsonic_context_path
+         - openvpnpia_enabled=$openvpnpia_enabled
+      image: boredazfcuk/subsonic
+      depends_on:
+         - openvpnpia
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - steve_subsonic_config:/config/
+         - /storage/:/storage/
+   jellyfin:
+      network_mode: service:openvpnpia
+      depends_on:
+         - openvpnpia
+      environment:
+         - TZ=$time_zone
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - user_id=$user_id
+         - group=$jellyfin_group
+         - group_id=$jellyfin_group_id
+         - global_api_key=$global_api_key
+         - jellyfin_enabled=$jellyfin_enabled
+         - openvpnpia_enabled=$openvpnpia_enabled
+         - jellyfin_web_root=$jellyfin_web_root
+         - media_access_domain=$media_access_domain
+         - host_lan_ip_subnet=$host_lan_ip_subnet
+         - NVIDIA_DRIVER_CAPABILITIES=$NVIDIA_DRIVER_CAPABILITIES
+         - NVIDIA_VISIBLE_DEVICES=$NVIDIA_VISIBLE_DEVICES
+         - video_dirs=$video_dirs
+         - tv_dirs=$tv_dirs
+         - music_dirs=$music_dirs
+      runtime: nvidia
+      image: boredazfcuk/jellyfin
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - steve_jellyfin_config:/config/
+         - steve_jellyfin_cache:/cache/
+         - steve_jellyfin_transcodes:/media/
+         - steve_jellyfin_metadata:/metadata/
+         - /storage/:/storage/:ro
+   nginx:
+      hostname: nginx
+      networks:
+         containers:
+            aliases:
+               - nginx
+      ports:
+         - 80:80
+         - 443:443
+      environment:
+         - TZ=$time_zone
+         - nginx_user_id=$nginx_user_id
+         - nginx_group_id=$nginx_group_id
+         - stack_user=$stack_user
+         - stack_password=$stack_password
+         - nginx_lan_logging=$nginx_lan_logging
+         - host_lan_ip_subnet=$host_lan_ip_subnet
+         - nginx_xenophobia=$nginx_xenophobia
+         - lets_encrypt_domains=$lets_encrypt_domains
+         - media_access_domain=$media_access_domain
+         - nextcloud_access_domain=$nextcloud_access_domain
+         - sabnzbd_enabled=$sabnzbd_enabled
+         - deluge_enabled=$deluge_enabled
+         - couchpotato_enabled=$couchpotato_enabled
+         - sickgear_enabled=$sickgear_enabled
+         - headphones_enabled=$headphones_enabled
+         - airsonic_enabled=$airsonic_enabled
+         - subsonic_enabled=$subsonic_enabled
+         - jellyfin_enabled=$jellyfin_enabled
+         - nextcloud_enabled=$nextcloud_enabled
+         - proxyconfig_enabled=$proxyconfig_enabled
+      image: boredazfcuk/nginx
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - openvpnpia
+         - airsonic
+         - sabnzbd
+         - deluge
+         - couchpotato
+         - sickgear
+         - headphones
+         - nextcloud
+         - geoipdb
+         - letsencrypt
+      volumes:
+         - steve_nginx_config:/etc/nginx/
+         - steve_nginx_cache:/var/cache/nginx/
+         - /usr/share/GeoIP/:/usr/share/GeoIP/:ro
+         - /etc/letsencrypt/:/etc/letsencrypt/:ro
+         - steve_nextcloud_website:/var/www/html/
+         - /mnt/hd3-HGTS-1TB/Nextcloud/:/nextcloud_data/
+   nextcloud:
+      hostname: nextcloud
+      networks:
+         containers:
+            aliases:
+               - nextcloud
+      environment:
+         - TZ=$time_zone
+         - REDIS_HOST=$redis_host
+         - MYSQL_HOST=$nextcloud_db_host
+         - MYSQL_DATABASE=$nextcloud_db
+         - MYSQL_USER=$nextcloud_db_user
+         - MYSQL_PASSWORD=$nextcloud_db_password
+         - MYSQL_ROOT_PASSWORD=$stack_password
+         - NEXTCLOUD_ADMIN_USER=$stack_user
+         - NEXTCLOUD_ADMIN_PASSWORD=$stack_password
+         - NEXTCLOUD_DATA_DIR=$nextcloud_data_dir
+         - NEXTCLOUD_UPDATE=$nextcloud_update
+         - media_access_domain=$media_access_domain
+         - nextcloud_access_domain=$nextcloud_access_domain
+         - nextcloud_user_id=$nextcloud_user_id
+         - nextcloud_group_id=$nextcloud_group_id
+         - nextcloud_web_root=$nextcloud_web_root
+      image: boredazfcuk/nextcloud
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      depends_on:
+         - mariadb
+         - redis
+      volumes:
+         - steve_nextcloud_website:/var/www/html/
+         - /mnt/hd3-HGTS-1TB/Nextcloud/:${nextcloud_data_dir}/
+   redis:
+      hostname: redis
+      networks:
+         containers:
+            aliases:
+               - redis
+      environment:
+         - TZ=$time_zone
+      image: boredazfcuk/redis
+      healthcheck:
+         test: /usr/local/bin/healthcheck.sh
+         start_period: 30s
+      restart: always
+      volumes:
+         - steve_redis_data:/var/lib/redis/
