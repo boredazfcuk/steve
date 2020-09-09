@@ -391,7 +391,7 @@ services:
       restart: always
       volumes:
          - steve_musicbrainz_config:/config
-         - /mnt/hd3-HGTS-1TB/MusicBrainz_DB/:/data
+         - /home/musicbrainz/MusicBrainz_DB/:/data
    airsonic:
       network_mode: service:openvpnpia
       environment:
@@ -521,7 +521,7 @@ services:
          - /usr/share/GeoIP/:/usr/share/GeoIP/:ro
          - /etc/letsencrypt/:/etc/letsencrypt/:ro
          - steve_nextcloud_website:/var/www/html/
-         - /mnt/hd3-HGTS-1TB/Nextcloud/:/nextcloud_data/
+         - /home/nextcloud/Nextcloud/:/nextcloud_data/
    nextcloud:
       hostname: nextcloud
       networks:
@@ -555,7 +555,7 @@ services:
          - redis
       volumes:
          - steve_nextcloud_website:/var/www/html/
-         - /mnt/hd3-HGTS-1TB/Nextcloud/:${nextcloud_data_dir}/
+         - /home/nextcloud/Nextcloud/:${nextcloud_data_dir}/
    redis:
       hostname: redis
       networks:
